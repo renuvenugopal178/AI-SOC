@@ -7,6 +7,8 @@ import authRoutes from './routes/auth';
 import adminRoutes from './routes/admin';
 import analystRoutes from './routes/analyst';
 import eventsRoutes from './routes/events';
+import rulesRoutes from './routes/rules';
+import alertsRoutes from './routes/alerts';
 
 dotenv.config();
 
@@ -47,6 +49,8 @@ const authLimiter = rateLimit({
 app.use('/api/auth', authLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventsRoutes);
+app.use('/api/rules', rulesRoutes);
+app.use('/api/alerts', alertsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/analyst', analystRoutes);
 

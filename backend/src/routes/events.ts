@@ -3,6 +3,7 @@ import SecurityEvent from '../models/SecurityEvent';
 import AuditLog from '../models/AuditLog';
 import { authenticate, AuthenticatedRequest, requireRole } from '../middleware/auth';
 import { sanitizeSecurityEvent, sanitizeViewerSecurityEvent, securityEventSchema } from '../validation/securityEvent';
+import { evaluateSecurityEvent } from '../services/detectionEngine';
 
 const router = Router();
 
@@ -74,6 +75,24 @@ router.post('/', authenticate, requireRole('ADMIN', 'SOC_ANALYST'), async (req: 
     const normalized = normalizeEventInput(parsed.data);
     const event = await SecurityEvent.create(normalized);
 
+    let generatedAlerts: any[] = [];
+
+    try {
+      generatedAlerts = await evaluateSecurityEvent(event.toObject());
+    } catch (evaluationError) {
+      await AuditLog.create({
+        userId: req.user?.userId,
+        action: 'DETECTION_EVALUATION_FAILURE',
+        success: false,
+        ipAddress: req.ip,
+        metadata: {
+          eventId: event._id.toString(),
+          reason: 'detection_engine_failed',
+          error: evaluationError instanceof Error ? evaluationError.message : 'Unknown error',
+        },
+      });
+    }
+
     await AuditLog.create({
       userId: req.user?.userId,
       action: 'EVENT_INGESTION_SUCCESS',
@@ -85,12 +104,14 @@ router.post('/', authenticate, requireRole('ADMIN', 'SOC_ANALYST'), async (req: 
         source: event.source,
         severity: event.severity,
         authenticatedUserId: req.user?.userId,
+        alertsGenerated: generatedAlerts.length,
       },
     });
 
     res.status(201).json({
       message: 'Security event ingested successfully.',
       event: sanitizeSecurityEvent(event.toObject()),
+      alerts: generatedAlerts,
     });
   } catch (error) {
     await createAuditFailure(req, {
