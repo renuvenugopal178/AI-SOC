@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AuthPage } from './pages/AuthPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { AlertsPage } from './pages/AlertsPage';
+import { DetectionRulesPage } from './pages/DetectionRulesPage';
+import { EventsPage } from './pages/EventsPage';
 import {
   fetchCurrentUser,
   getStoredUser,
@@ -12,8 +15,8 @@ import {
 } from './services/auth';
 
 const roleNavMap: Record<AuthUser['role'], string[]> = {
-  ADMIN: ['Dashboard', 'Users', 'Detection Rules', 'Incidents', 'Events'],
-  SOC_ANALYST: ['Dashboard', 'Events', 'Alerts', 'Incidents'],
+  ADMIN: ['Dashboard', 'Events', 'Detection Rules', 'Alerts'],
+  SOC_ANALYST: ['Dashboard', 'Events', 'Alerts'],
   VIEWER: ['Dashboard', 'Events'],
 };
 
@@ -22,6 +25,7 @@ export default function App() {
   const [user, setUser] = useState<AuthUser | null>(getStoredUser());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activePage, setActivePage] = useState('Dashboard');
 
   const token = getStoredToken();
 
@@ -83,6 +87,7 @@ export default function App() {
     }
 
     setUser(result.data.user);
+    setActivePage('Dashboard');
     return true;
   };
 
@@ -117,6 +122,7 @@ export default function App() {
     }
 
     setUser(loginResult.data.user);
+    setActivePage('Dashboard');
     return true;
   };
 
@@ -148,12 +154,17 @@ export default function App() {
     );
   }
 
-  return (
-    <DashboardPage
-      user={user}
-      navItems={navItems}
-      onLogout={handleLogout}
-      apiError={error}
-    />
-  );
+  if (activePage === 'Alerts' && navItems.includes('Alerts')) {
+    return <AlertsPage user={user} navItems={navItems} onLogout={handleLogout} onNavigate={setActivePage} apiError={error} />;
+  }
+
+  if (activePage === 'Events' && navItems.includes('Events')) {
+    return <EventsPage user={user} navItems={navItems} onLogout={handleLogout} onNavigate={setActivePage} apiError={error} />;
+  }
+
+  if (activePage === 'Detection Rules' && navItems.includes('Detection Rules')) {
+    return <DetectionRulesPage user={user} navItems={navItems} onLogout={handleLogout} onNavigate={setActivePage} apiError={error} />;
+  }
+
+  return <DashboardPage user={user} navItems={navItems} onLogout={handleLogout} onNavigate={setActivePage} apiError={error} />;
 }
