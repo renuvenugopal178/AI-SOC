@@ -55,7 +55,7 @@ const createAuditFailure = async (req: AuthenticatedRequest, metadata: Record<st
   });
 };
 
-router.post('/', authenticate, requireRole('ADMIN', 'SOC_ANALYST'), async (req: AuthenticatedRequest, res: Response) => {
+const handleIngestEvent = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const parsed = securityEventSchema.safeParse(req.body);
 
@@ -110,6 +110,7 @@ router.post('/', authenticate, requireRole('ADMIN', 'SOC_ANALYST'), async (req: 
 
     res.status(201).json({
       message: 'Security event ingested successfully.',
+      eventId: event._id.toString(),
       event: sanitizeSecurityEvent(event.toObject()),
       alerts: generatedAlerts,
     });
@@ -121,21 +122,40 @@ router.post('/', authenticate, requireRole('ADMIN', 'SOC_ANALYST'), async (req: 
 
     res.status(500).json({ error: 'Unable to ingest security event.' });
   }
-});
+};
 
+// Ingestion endpoints: POST / and POST /ingest
+router.post('/', authenticate, requireRole('ADMIN', 'SOC_ANALYST'), handleIngestEvent);
+router.post('/ingest', authenticate, requireRole('ADMIN', 'SOC_ANALYST'), handleIngestEvent);
+
+// Retrieve events list with pagination and filtering
 router.get('/', authenticate, requireRole('ADMIN', 'SOC_ANALYST', 'VIEWER'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
     const skip = (page - 1) * limit;
 
+    const filter: Record<string, unknown> = {};
+    if (typeof req.query.source === 'string' && req.query.source.trim()) {
+      filter.source = req.query.source.trim();
+    }
+    if (typeof req.query.eventType === 'string' && req.query.eventType.trim()) {
+      filter.eventType = req.query.eventType.trim().toUpperCase();
+    }
+    if (typeof req.query.severity === 'string' && req.query.severity.trim()) {
+      filter.severity = req.query.severity.trim().toUpperCase();
+    }
+    if (typeof req.query.username === 'string' && req.query.username.trim()) {
+      filter.username = req.query.username.trim();
+    }
+
     const [events, total] = await Promise.all([
-      SecurityEvent.find({})
+      SecurityEvent.find(filter)
         .sort({ timestamp: -1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      SecurityEvent.countDocuments(),
+      SecurityEvent.countDocuments(filter),
     ]);
 
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
@@ -153,6 +173,26 @@ router.get('/', authenticate, requireRole('ADMIN', 'SOC_ANALYST', 'VIEWER'), asy
     });
   } catch (error) {
     res.status(500).json({ error: 'Unable to retrieve security events.' });
+  }
+});
+
+// Retrieve single event by ID
+router.get('/:id', authenticate, requireRole('ADMIN', 'SOC_ANALYST', 'VIEWER'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const event = await SecurityEvent.findById(req.params.id).lean();
+
+    if (!event) {
+      res.status(404).json({ error: 'Security event not found.' });
+      return;
+    }
+
+    const sanitized = req.user?.role === 'VIEWER'
+      ? sanitizeViewerSecurityEvent(event)
+      : sanitizeSecurityEvent(event);
+
+    res.status(200).json({ event: sanitized });
+  } catch (error) {
+    res.status(500).json({ error: 'Unable to retrieve security event.' });
   }
 });
 
