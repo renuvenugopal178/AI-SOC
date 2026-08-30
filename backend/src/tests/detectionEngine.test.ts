@@ -500,4 +500,143 @@ describe('Detection engine and rule management', () => {
     const alerts = await (await import('../services/detectionEngine')).evaluateSecurityEvent(event.toObject());
     expect(alerts[0].status).toBe('NEW');
   });
+
+  it('19. Duplicate processing of the same event and rule does not create duplicate alerts', async () => {
+    const rule = await DetectionRule.create({
+      name: 'Deduplication Test Rule',
+      description: 'rule for dedup check',
+      ruleType: 'EVENT_MATCH',
+      enabled: true,
+      severity: 'HIGH',
+      riskScore: 75,
+      conditions: { field: 'eventType', operator: 'EQUALS', value: 'SQL_INJECTION' },
+      createdBy: 'admin',
+    });
+
+    const event = await SecurityEvent.create({
+      timestamp: new Date(),
+      source: 'waf',
+      eventType: 'SQL_INJECTION',
+      severity: 'HIGH',
+      message: 'SQL injection attack detected',
+    });
+
+    const { evaluateSecurityEvent } = await import('../services/detectionEngine');
+
+    // First evaluation
+    const firstRunAlerts = await evaluateSecurityEvent(event.toObject());
+    expect(firstRunAlerts.length).toBe(1);
+
+    const alertCountAfterFirst = await Alert.countDocuments({
+      ruleId: rule._id,
+      eventId: event._id,
+    });
+    expect(alertCountAfterFirst).toBe(1);
+
+    // Second evaluation on the same event
+    const secondRunAlerts = await evaluateSecurityEvent(event.toObject());
+    expect(secondRunAlerts.length).toBe(1);
+
+    // Total alerts in DB must still be 1 (no duplicates)
+    const alertCountAfterSecond = await Alert.countDocuments({
+      ruleId: rule._id,
+      eventId: event._id,
+    });
+    expect(alertCountAfterSecond).toBe(1);
+    expect(await Alert.countDocuments({})).toBe(1);
+  });
+
+  it('20. Ingestion endpoint automatically executes detection and creates an alert for matching event', async () => {
+    const token = await createUser('ADMIN', 'auto_detect_ingest');
+
+    await DetectionRule.create({
+      name: 'Ingest Match Rule',
+      description: 'rule matching ingested event',
+      ruleType: 'EVENT_MATCH',
+      enabled: true,
+      severity: 'CRITICAL',
+      riskScore: 90,
+      conditions: { field: 'eventType', operator: 'EQUALS', value: 'BRUTE_FORCE' },
+      createdBy: 'admin',
+    });
+
+    const res = await request(app)
+      .post('/api/events/ingest')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        source: 'auth-service',
+        eventType: 'BRUTE_FORCE',
+        severity: 'CRITICAL',
+        sourceIp: '192.168.1.100',
+        message: 'Repeated authentication failures detected',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.alerts).toBeDefined();
+    expect(res.body.alerts.length).toBe(1);
+    expect(res.body.alerts[0].severity).toBe('CRITICAL');
+
+    const alertInDb = await Alert.findOne({ eventId: res.body.eventId });
+    expect(alertInDb).not.toBeNull();
+    expect(alertInDb?.title).toContain('Ingest Match Rule');
+  });
+
+  it('21. Ingestion endpoint does not create alert for disabled rule', async () => {
+    const token = await createUser('ADMIN', 'auto_detect_disabled');
+
+    await DetectionRule.create({
+      name: 'Disabled Ingest Rule',
+      description: 'disabled rule',
+      ruleType: 'EVENT_MATCH',
+      enabled: false,
+      severity: 'HIGH',
+      riskScore: 70,
+      conditions: { field: 'eventType', operator: 'EQUALS', value: 'XSS_ATTACK' },
+      createdBy: 'admin',
+    });
+
+    const res = await request(app)
+      .post('/api/events/ingest')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        source: 'waf',
+        eventType: 'XSS_ATTACK',
+        severity: 'HIGH',
+        message: 'XSS payload in query string',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.alerts).toEqual([]);
+    expect(await Alert.countDocuments({})).toBe(0);
+  });
+
+  it('22. Ingestion endpoint does not create alert for non-matching event', async () => {
+    const token = await createUser('ADMIN', 'auto_detect_nomatch');
+
+    await DetectionRule.create({
+      name: 'Port Scan Rule',
+      description: 'only port scans',
+      ruleType: 'EVENT_MATCH',
+      enabled: true,
+      severity: 'HIGH',
+      riskScore: 80,
+      conditions: { field: 'eventType', operator: 'EQUALS', value: 'PORT_SCAN' },
+      createdBy: 'admin',
+    });
+
+    const res = await request(app)
+      .post('/api/events/ingest')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        source: 'sensor',
+        eventType: 'SYSTEM_STARTUP',
+        severity: 'LOW',
+        message: 'Host rebooted normally',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.alerts).toEqual([]);
+    expect(await Alert.countDocuments({})).toBe(0);
+  });
 });
+

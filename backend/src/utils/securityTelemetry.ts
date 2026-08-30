@@ -1,5 +1,6 @@
 import { Request } from 'express';
 import SecurityEvent, { SecurityEventSeverity } from '../models/SecurityEvent';
+import { evaluateSecurityEvent } from '../services/detectionEngine';
 
 interface SecurityTelemetryInput {
   eventType: string;
@@ -12,7 +13,7 @@ interface SecurityTelemetryInput {
 
 export const recordSecurityEvent = async (req: Request, input: SecurityTelemetryInput): Promise<void> => {
   try {
-    await SecurityEvent.create({
+    const event = await SecurityEvent.create({
       timestamp: new Date(),
       source: 'auth-service',
       eventType: input.eventType,
@@ -28,6 +29,8 @@ export const recordSecurityEvent = async (req: Request, input: SecurityTelemetry
         ...input.metadata,
       },
     });
+
+    await evaluateSecurityEvent(event.toObject());
   } catch (error) {
     console.error('Unable to record security event:', error);
   }
