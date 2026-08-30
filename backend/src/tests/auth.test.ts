@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import app from '../app';
 import User from '../models/User';
 import AuditLog from '../models/AuditLog';
+import SecurityEvent from '../models/SecurityEvent';
 
 const baseUser = {
   username: 'analyst1',
@@ -19,11 +20,13 @@ describe('Authentication and RBAC API', () => {
     await mongoose.connect(mongoUri);
     await User.deleteMany({});
     await AuditLog.deleteMany({});
+    await SecurityEvent.deleteMany({});
   });
 
   beforeEach(async () => {
     await User.deleteMany({});
     await AuditLog.deleteMany({});
+    await SecurityEvent.deleteMany({});
   });
 
   afterAll(async () => {
@@ -47,6 +50,13 @@ describe('Authentication and RBAC API', () => {
       role: 'VIEWER',
     });
     expect(res.body.user.passwordHash).toBeUndefined();
+
+    const event = await SecurityEvent.findOne({ eventType: 'USER_REGISTRATION' });
+    expect(event).toMatchObject({
+      source: 'auth-service',
+      username: 'alice',
+      sourceIp: '::ffff:127.0.0.1',
+    });
   });
 
   it('2. rejects duplicate email', async () => {
@@ -114,6 +124,13 @@ describe('Authentication and RBAC API', () => {
     expect(res.status).toBe(200);
     expect(res.body.token).toBeTruthy();
     expect(res.body.user.email).toBe('login@example.com');
+
+    const event = await SecurityEvent.findOne({ eventType: 'LOGIN_SUCCESS' });
+    expect(event).toMatchObject({
+      username: 'loginuser',
+      sourceIp: '::ffff:127.0.0.1',
+    });
+    expect(event?.metadata).not.toHaveProperty('password');
   });
 
   it('6. rejects incorrect password', async () => {
@@ -133,6 +150,8 @@ describe('Authentication and RBAC API', () => {
       });
 
     expect(res.status).toBe(401);
+
+    expect(await SecurityEvent.countDocuments({ eventType: 'LOGIN_FAILED' })).toBe(1);
   });
 
   it('7. rejects non-existent user', async () => {

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import User, { UserRole } from '../models/User';
+import { recordSecurityEvent } from '../utils/securityTelemetry';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -19,6 +20,13 @@ export const authenticate = async (
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    await recordSecurityEvent(req, {
+      eventType: 'UNAUTHORIZED_ACCESS',
+      severity: 'MEDIUM',
+      action: 'authentication',
+      message: 'Authentication failed because credentials were not provided.',
+      metadata: { reason: 'missing_credentials' },
+    });
     res.status(401).json({ error: 'Authentication required.' });
     return;
   }
@@ -32,6 +40,13 @@ export const authenticate = async (
     const user = await User.findById(decoded.userId).select('_id username email role isActive');
 
     if (!user || !user.isActive) {
+      await recordSecurityEvent(req, {
+        eventType: 'UNAUTHORIZED_ACCESS',
+        severity: 'MEDIUM',
+        action: 'authentication',
+        message: 'Authentication failed because the account was not found or is inactive.',
+        metadata: { reason: !user ? 'user_not_found' : 'inactive_account' },
+      });
       res.status(401).json({ error: 'Authentication required.' });
       return;
     }
@@ -44,6 +59,13 @@ export const authenticate = async (
     };
     next();
   } catch (error) {
+    await recordSecurityEvent(req, {
+      eventType: 'UNAUTHORIZED_ACCESS',
+      severity: 'MEDIUM',
+      action: 'authentication',
+      message: 'Authentication failed because the token was invalid or expired.',
+      metadata: { reason: 'invalid_or_expired_token' },
+    });
     res.status(401).json({ error: 'Invalid or expired token.' });
   }
 };
@@ -56,6 +78,14 @@ export const requireRole = (...allowedRoles: UserRole[]) => {
     }
 
     if (!allowedRoles.includes(req.user.role)) {
+      void recordSecurityEvent(req, {
+        eventType: 'FORBIDDEN_ACCESS',
+        severity: 'MEDIUM',
+        action: 'authorization',
+        message: 'Authorization failed because the user role is not permitted.',
+        username: req.user.username,
+        metadata: { role: req.user.role },
+      });
       res.status(403).json({ error: 'You do not have permission to access this resource.' });
       return;
     }

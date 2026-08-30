@@ -5,6 +5,7 @@ import AuditLog from '../models/AuditLog';
 import { registerSchema, loginSchema } from '../validation/auth';
 import { generateToken, hashPassword, sanitizeUser } from '../utils/auth';
 import { authenticate, AuthenticatedRequest } from '../middleware/auth';
+import { recordSecurityEvent } from '../utils/securityTelemetry';
 
 const router = Router();
 
@@ -27,6 +28,14 @@ router.post('/register', async (req: Request, res: Response) => {
         ipAddress: req.ip,
         metadata: { email, username, reason: 'duplicate_user' },
       });
+      await recordSecurityEvent(req, {
+        eventType: 'USER_REGISTRATION_FAILED',
+        severity: 'LOW',
+        action: 'registration',
+        message: 'User registration failed because the username or email already exists.',
+        username,
+        metadata: { reason: 'duplicate_user' },
+      });
       res.status(409).json({ error: 'Username or email already exists.' });
       return;
     }
@@ -46,6 +55,14 @@ router.post('/register', async (req: Request, res: Response) => {
       success: true,
       ipAddress: req.ip,
       metadata: { username, email, role },
+    });
+    await recordSecurityEvent(req, {
+      eventType: 'USER_REGISTRATION',
+      severity: 'LOW',
+      action: 'registration',
+      message: 'User registration succeeded.',
+      username: user.username,
+      metadata: { role: user.role },
     });
 
     res.status(201).json({
@@ -76,6 +93,13 @@ router.post('/login', async (req: Request, res: Response) => {
         ipAddress: req.ip,
         metadata: { email, reason: 'user_not_found' },
       });
+      await recordSecurityEvent(req, {
+        eventType: 'LOGIN_FAILED',
+        severity: 'MEDIUM',
+        action: 'login',
+        message: 'Login failed because the user was not found.',
+        metadata: { reason: 'user_not_found' },
+      });
       res.status(401).json({ error: 'Invalid email or password.' });
       return;
     }
@@ -89,6 +113,14 @@ router.post('/login', async (req: Request, res: Response) => {
         ipAddress: req.ip,
         metadata: { email, reason: 'invalid_password' },
       });
+      await recordSecurityEvent(req, {
+        eventType: 'LOGIN_FAILED',
+        severity: 'MEDIUM',
+        action: 'login',
+        message: 'Login failed because the password was invalid.',
+        username: user.username,
+        metadata: { reason: 'invalid_password' },
+      });
       res.status(401).json({ error: 'Invalid email or password.' });
       return;
     }
@@ -100,6 +132,14 @@ router.post('/login', async (req: Request, res: Response) => {
         success: false,
         ipAddress: req.ip,
         metadata: { email, reason: 'inactive_account' },
+      });
+      await recordSecurityEvent(req, {
+        eventType: 'LOGIN_FAILED',
+        severity: 'MEDIUM',
+        action: 'login',
+        message: 'Login failed because the account is inactive.',
+        username: user.username,
+        metadata: { reason: 'inactive_account' },
       });
       res.status(401).json({ error: 'Account is inactive.' });
       return;
@@ -116,6 +156,14 @@ router.post('/login', async (req: Request, res: Response) => {
       success: true,
       ipAddress: req.ip,
       metadata: { email, role: user.role },
+    });
+    await recordSecurityEvent(req, {
+      eventType: 'LOGIN_SUCCESS',
+      severity: 'LOW',
+      action: 'login',
+      message: 'Login succeeded.',
+      username: user.username,
+      metadata: { role: user.role },
     });
 
     res.status(200).json({
