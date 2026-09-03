@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "test": "jest --runInBand",
     "seed-admin": "tsx scripts/seed-admin.ts",
-    "reset-admin-password": "tsx scripts/reset-admin-password.ts"
+    "reset-admin-password": "tsx scripts/reset-admin-password.ts",
+    "simulate": "tsx scripts/simulate-telemetry.ts"
   },
   "keywords": [
     "soc",

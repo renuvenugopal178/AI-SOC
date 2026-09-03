@@ -2,6 +2,7 @@ import mongoose, { Types } from 'mongoose';
 import DetectionRule, { DetectionRuleType } from '../models/DetectionRule';
 import Alert from '../models/Alert';
 import SecurityEvent, { ISecurityEvent } from '../models/SecurityEvent';
+import { correlateAlert } from './correlationService';
 
 const safeStringValue = (value: unknown): string | undefined => {
   if (typeof value === 'string') return value;
@@ -65,6 +66,11 @@ const evaluatesThresholdRule = async (event: Record<string, any>, rule: Record<s
   const windowMinutes = Number(conditions.windowMinutes ?? 0);
 
   if (!field || !operator || !threshold || !windowMinutes) {
+    return false;
+  }
+
+  const eventValue = event[field];
+  if (!compareValues(eventValue, operator, value)) {
     return false;
   }
 
@@ -143,6 +149,7 @@ export const evaluateSecurityEvent = async (event: Record<string, any>): Promise
       );
 
       generatedAlerts.push(alert);
+      await correlateAlert(alert);
       seenAlertKeys.add(alertKey);
     }
 
