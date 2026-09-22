@@ -8,9 +8,11 @@ type DashboardPageProps = {
   onLogout: () => void;
   onNavigate: (page: string) => void;
   apiError?: string | null;
+  realtimeVersion?: number;
+  realtimeStatus?: 'LIVE' | 'RECONNECTING';
 };
 
-export function DashboardPage({ user, navItems, onLogout, onNavigate, apiError }: DashboardPageProps) {
+export function DashboardPage({ user, navItems, onLogout, onNavigate, apiError, realtimeVersion = 0, realtimeStatus = 'RECONNECTING' }: DashboardPageProps) {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
@@ -29,7 +31,7 @@ export function DashboardPage({ user, navItems, onLogout, onNavigate, apiError }
         setDashboardError(error instanceof Error ? error.message : 'Unable to load dashboard data.');
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [realtimeVersion]);
 
   const errorMessage = apiError || dashboardError;
 
@@ -68,7 +70,7 @@ export function DashboardPage({ user, navItems, onLogout, onNavigate, apiError }
         <div className="mb-8 flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
           <div>
             <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Operations</p>
-            <h1 className="mt-2 text-3xl font-bold text-white">Dashboard</h1>
+            <div className="mt-2 flex items-center gap-3"><h1 className="text-3xl font-bold text-white">Dashboard</h1><span className={`rounded-full border px-2 py-1 text-[10px] font-bold tracking-[0.16em] ${realtimeStatus === 'LIVE' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' : 'border-amber-500/40 bg-amber-500/10 text-amber-300'}`}>{realtimeStatus}</span></div>
           </div>
 
           <button

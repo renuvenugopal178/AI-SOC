@@ -9,6 +9,7 @@ type AlertsPageProps = {
   onLogout: () => void;
   onNavigate: (page: string) => void;
   apiError?: string | null;
+  realtimeVersion?: number;
 };
 
 const severityOptions: Array<SecuritySeverity | 'ALL'> = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
@@ -31,7 +32,7 @@ const statusClass: Record<AlertStatus, string> = {
   RESOLVED: 'text-slate-400',
 };
 
-export function AlertsPage({ user, navItems, onLogout, onNavigate, apiError }: AlertsPageProps) {
+export function AlertsPage({ user, navItems, onLogout, onNavigate, apiError, realtimeVersion = 0 }: AlertsPageProps) {
   const [filters, setFilters] = useState<AlertFilters>({ severity: 'ALL', status: 'ALL' });
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [total, setTotal] = useState(0);
@@ -57,7 +58,7 @@ export function AlertsPage({ user, navItems, onLogout, onNavigate, apiError }: A
         setError(requestError instanceof Error ? requestError.message : 'Unable to load alerts.');
       })
       .finally(() => setLoading(false));
-  }, [filters]);
+  }, [filters, realtimeVersion]);
 
   const errorMessage = apiError || error;
 

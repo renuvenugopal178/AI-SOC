@@ -6,8 +6,48 @@ import { registerSchema, loginSchema } from '../validation/auth';
 import { generateToken, hashPassword, sanitizeUser } from '../utils/auth';
 import { authenticate, AuthenticatedRequest } from '../middleware/auth';
 import { recordSecurityEvent } from '../utils/securityTelemetry';
+import { getLocalSimulatorSecret, isLoopbackRequest } from '../utils/localSimulatorAuth';
 
 const router = Router();
+
+router.post('/local-simulator-token', async (req: Request, res: Response) => {
+  if (process.env.NODE_ENV !== 'development' || process.env.LOCAL_SIMULATOR_AUTH !== 'true') {
+    res.status(404).json({ error: 'Not found.' });
+    return;
+  }
+
+  const requestAddress = req.socket.remoteAddress || req.ip;
+  if (!isLoopbackRequest(requestAddress)) {
+    res.status(404).json({ error: 'Not found.' });
+    return;
+  }
+
+  const configuredSecret = getLocalSimulatorSecret();
+  const providedSecret = req.get('X-Local-Simulator-Secret');
+  if (!configuredSecret || !providedSecret || providedSecret !== configuredSecret) {
+    res.status(401).json({ error: 'Local simulator authentication failed.' });
+    return;
+  }
+
+  try {
+    const user = await User.findOne({
+      role: { $in: ['ADMIN', 'SOC_ANALYST'] },
+      isActive: true,
+    }).sort({ role: 1, createdAt: 1 });
+
+    if (!user) {
+      res.status(503).json({ error: 'Create an active ADMIN or SOC_ANALYST account before running the simulator.' });
+      return;
+    }
+
+    res.status(200).json({
+      token: generateToken(user._id.toString(), user.role),
+      user: sanitizeUser(user.toObject()),
+    });
+  } catch {
+    res.status(503).json({ error: 'Unable to create a local simulator token.' });
+  }
+});
 
 router.post('/register', async (req: Request, res: Response) => {
   try {

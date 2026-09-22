@@ -4,6 +4,8 @@ import { DashboardPage } from './pages/DashboardPage';
 import { AlertsPage } from './pages/AlertsPage';
 import { DetectionRulesPage } from './pages/DetectionRulesPage';
 import { EventsPage } from './pages/EventsPage';
+import { IncidentsPage } from './pages/IncidentsPage';
+import { useRealtimeEvents } from './hooks/useRealtimeEvents';
 import {
   fetchCurrentUser,
   getStoredUser,
@@ -15,9 +17,9 @@ import {
 } from './services/auth';
 
 const roleNavMap: Record<AuthUser['role'], string[]> = {
-  ADMIN: ['Dashboard', 'Events', 'Detection Rules', 'Alerts'],
-  SOC_ANALYST: ['Dashboard', 'Events', 'Alerts'],
-  VIEWER: ['Dashboard', 'Events'],
+  ADMIN: ['Dashboard', 'Events', 'Alerts', 'Incidents', 'Detection Rules'],
+  SOC_ANALYST: ['Dashboard', 'Events', 'Alerts', 'Incidents'],
+  VIEWER: ['Dashboard', 'Events', 'Incidents'],
 };
 
 export default function App() {
@@ -28,6 +30,8 @@ export default function App() {
   const [activePage, setActivePage] = useState('Dashboard');
 
   const token = getStoredToken();
+  const incidentId = activePage.startsWith('Incident:') ? activePage.substring('Incident:'.length) : undefined;
+  const { status: realtimeStatus, eventVersion } = useRealtimeEvents(token, Boolean(user));
 
   useEffect(() => {
     const hydrateSession = async () => {
@@ -155,16 +159,20 @@ export default function App() {
   }
 
   if (activePage === 'Alerts' && navItems.includes('Alerts')) {
-    return <AlertsPage user={user} navItems={navItems} onLogout={handleLogout} onNavigate={setActivePage} apiError={error} />;
+    return <AlertsPage user={user} navItems={navItems} onLogout={handleLogout} onNavigate={setActivePage} apiError={error} realtimeVersion={eventVersion} />;
   }
 
   if (activePage === 'Events' && navItems.includes('Events')) {
-    return <EventsPage user={user} navItems={navItems} onLogout={handleLogout} onNavigate={setActivePage} apiError={error} />;
+    return <EventsPage user={user} navItems={navItems} onLogout={handleLogout} onNavigate={setActivePage} apiError={error} realtimeVersion={eventVersion} />;
   }
 
   if (activePage === 'Detection Rules' && navItems.includes('Detection Rules')) {
     return <DetectionRulesPage user={user} navItems={navItems} onLogout={handleLogout} onNavigate={setActivePage} apiError={error} />;
   }
 
-  return <DashboardPage user={user} navItems={navItems} onLogout={handleLogout} onNavigate={setActivePage} apiError={error} />;
+  if ((activePage === 'Incidents' || incidentId) && navItems.includes('Incidents')) {
+    return <IncidentsPage user={user} navItems={navItems} onLogout={handleLogout} onNavigate={setActivePage} selectedIncidentId={incidentId} apiError={error} realtimeVersion={eventVersion} realtimeStatus={realtimeStatus} />;
+  }
+
+  return <DashboardPage user={user} navItems={navItems} onLogout={handleLogout} onNavigate={setActivePage} apiError={error} realtimeVersion={eventVersion} realtimeStatus={realtimeStatus} />;
 }

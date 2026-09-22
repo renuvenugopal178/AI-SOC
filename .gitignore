@@ -1,5 +1,9 @@
 node_modules/
 .env
+.env.*
+!.env.example
+.local-simulator-secret
+backend/.local-simulator-secret
 venv/
 __pycache__/
 .pytest_cache/

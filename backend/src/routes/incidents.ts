@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import Incident, { IncidentStatus } from '../models/Incident';
 import { authenticate, AuthenticatedRequest, requireRole } from '../middleware/auth';
+import { publishRealtimeEvent } from '../services/realtimeService';
 
 const router = Router();
 const incidentStatuses: IncidentStatus[] = ['NEW', 'INVESTIGATING', 'RESOLVED', 'FALSE_POSITIVE'];
@@ -56,6 +57,17 @@ router.patch('/:id/status', authenticate, requireRole('ADMIN', 'SOC_ANALYST'), a
   }
 
   try {
+    const currentIncident = await Incident.findById(req.params.id).lean();
+    if (!currentIncident) {
+      res.status(404).json({ error: 'Incident not found.' });
+      return;
+    }
+
+    if (currentIncident.status === status) {
+      res.status(200).json({ incident: currentIncident });
+      return;
+    }
+
     const incident = await Incident.findByIdAndUpdate(
       req.params.id,
       { status },
@@ -67,6 +79,12 @@ router.patch('/:id/status', authenticate, requireRole('ADMIN', 'SOC_ANALYST'), a
       return;
     }
 
+    publishRealtimeEvent('INCIDENT_UPDATED', {
+      incidentId: incident._id.toString(),
+      severity: incident.severity,
+      riskScore: incident.riskScore,
+      status: incident.status,
+    });
     res.status(200).json({ incident });
   } catch (error) {
     res.status(500).json({ error: 'Unable to update incident status.' });

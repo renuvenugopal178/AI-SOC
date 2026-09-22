@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "test": "jest --runInBand",
     "seed-admin": "tsx scripts/seed-admin.ts",
+    "seed-rules": "tsx scripts/seed-rules.ts",
     "reset-admin-password": "tsx scripts/reset-admin-password.ts",
     "simulate": "tsx scripts/simulate-telemetry.ts"
   },

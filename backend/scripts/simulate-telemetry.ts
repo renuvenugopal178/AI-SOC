@@ -7,6 +7,7 @@ import {
   normalizeApiUrl,
   EventDispatchResult,
 } from '../src/simulator/telemetrySimulator';
+import { ensureLocalSimulatorSecret } from '../src/utils/localSimulatorAuth';
 
 dotenv.config();
 
@@ -39,6 +40,7 @@ Authentication (set via environment or .env):
   OR
   ADMIN_EMAIL=<email>  Email of an existing ADMIN or SOC_ANALYST account
   ADMIN_PASSWORD=<pw>  Password for the account (used to obtain token automatically)
+  If neither is set, local development uses the loopback-only simulator token endpoint.
 ================================================================================
 `);
 };
@@ -87,6 +89,20 @@ const resolveAuthToken = async (apiUrl: string): Promise<string> => {
     const token = await loginAndGetToken(apiUrl, email, password);
     console.log('[Simulator] Authentication successful.');
     return token;
+  }
+
+  if (process.env.NODE_ENV === 'development' && process.env.LOCAL_SIMULATOR_AUTH === 'true') {
+    const secret = ensureLocalSimulatorSecret();
+    const response = await fetch(`${normalizeApiUrl(apiUrl)}/api/auth/local-simulator-token`, {
+      method: 'POST',
+      headers: { 'X-Local-Simulator-Secret': secret },
+    });
+    const data = (await response.json().catch(() => ({}))) as Record<string, any>;
+    if (response.ok && typeof data.token === 'string') {
+      console.log('[Simulator] Using the local development simulator identity.');
+      return data.token;
+    }
+    throw new Error(data.error || `Local simulator authentication failed with status ${response.status}.`);
   }
 
   throw new Error(

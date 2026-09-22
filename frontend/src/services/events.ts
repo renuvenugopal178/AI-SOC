@@ -13,6 +13,9 @@ export type SecurityEventRecord = {
   username?: string | null;
   action?: string | null;
   message?: string | null;
+  sourcePort?: number | null;
+  destinationPort?: number | null;
+  metadata?: Record<string, unknown>;
 };
 
 export type EventsResponse = {

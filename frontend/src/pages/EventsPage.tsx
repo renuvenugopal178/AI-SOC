@@ -9,6 +9,7 @@ type EventsPageProps = {
   onLogout: () => void;
   onNavigate: (page: string) => void;
   apiError?: string | null;
+  realtimeVersion?: number;
 };
 
 const severityClass: Record<SecuritySeverity, string> = {
@@ -24,7 +25,7 @@ const formatDate = (value: string) => new Intl.DateTimeFormat(undefined, {
 
 const displayValue = (value?: string | null) => value || '—';
 
-export function EventsPage({ user, navItems, onLogout, onNavigate, apiError }: EventsPageProps) {
+export function EventsPage({ user, navItems, onLogout, onNavigate, apiError, realtimeVersion = 0 }: EventsPageProps) {
   const [events, setEvents] = useState<SecurityEventRecord[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -52,7 +53,7 @@ export function EventsPage({ user, navItems, onLogout, onNavigate, apiError }: E
         setError(requestError instanceof Error ? requestError.message : 'Unable to load security events.');
       })
       .finally(() => setLoading(false));
-  }, [page]);
+  }, [page, realtimeVersion]);
 
   const errorMessage = apiError || error;
 

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Alert, { AlertSeverity, IAlert } from '../models/Alert';
 import Incident, { IncidentSeverity, IIncident } from '../models/Incident';
+import { publishRealtimeEvent } from './realtimeService';
 
 const DEFAULT_WINDOW_MINUTES = 30;
 const severityRank: Record<AlertSeverity, number> = {
@@ -80,6 +81,23 @@ export const correlateAlert = async (alert: IAlert): Promise<IIncident | null> =
       firstSeen,
       lastSeen,
     });
+    publishRealtimeEvent('INCIDENT_CREATED', {
+      incidentId: incident._id.toString(),
+      severity: incident.severity,
+      riskScore: incident.riskScore,
+      status: incident.status,
+    });
+    return incident;
+  }
+
+  const nextAlertIds = relatedAlerts.map((relatedAlert) => relatedAlert._id.toString());
+  const currentAlertIds = incident.relatedAlertIds.map((relatedAlertId) => relatedAlertId.toString());
+  const changed = nextAlertIds.length !== currentAlertIds.length
+    || nextAlertIds.some((relatedAlertId) => !currentAlertIds.includes(relatedAlertId))
+    || incident.riskScore !== riskScore
+    || incident.severity !== severity
+    || incident.lastSeen.getTime() !== lastSeen.getTime();
+  if (!changed) {
     return incident;
   }
 
@@ -93,6 +111,12 @@ export const correlateAlert = async (alert: IAlert): Promise<IIncident | null> =
   incident.riskScore = riskScore;
   incident.description = incidentDescription(relatedAlerts);
   await incident.save();
+  publishRealtimeEvent('INCIDENT_UPDATED', {
+    incidentId: incident._id.toString(),
+    severity: incident.severity,
+    riskScore: incident.riskScore,
+    status: incident.status,
+  });
 
   return incident;
 };

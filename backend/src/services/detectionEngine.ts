@@ -3,6 +3,8 @@ import DetectionRule, { DetectionRuleType } from '../models/DetectionRule';
 import Alert from '../models/Alert';
 import SecurityEvent, { ISecurityEvent } from '../models/SecurityEvent';
 import { correlateAlert } from './correlationService';
+import { scoreEventForAnomaly } from './mlClient';
+import { publishRealtimeEvent } from './realtimeService';
 
 const safeStringValue = (value: unknown): string | undefined => {
   if (typeof value === 'string') return value;
@@ -89,11 +91,70 @@ const evaluatesThresholdRule = async (event: Record<string, any>, rule: Record<s
 
 const dedupeAlertKey = (ruleId: string, eventId: string): string => `${ruleId}:${eventId}`;
 
+const createAnomalyAlert = async (event: Record<string, any>, anomalyScore: number, modelVersion: string): Promise<any> => {
+  const eventId = String(event._id ?? event.id);
+  const eventData = await SecurityEvent.findById(eventId).lean();
+  const rule = await DetectionRule.findOneAndUpdate(
+    { name: 'ML Anomaly Detection' },
+    {
+      name: 'ML Anomaly Detection',
+      description: 'Isolation Forest anomaly-assistance signal.',
+      ruleType: 'EVENT_MATCH',
+      enabled: true,
+      severity: 'HIGH',
+      riskScore: Math.round(anomalyScore * 100),
+      conditions: { source: 'ml-service', modelVersion },
+      createdBy: 'system',
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  const alertFilter = { ruleId: rule._id, eventId: new Types.ObjectId(eventId) };
+  const existingAlert = await Alert.exists(alertFilter);
+  const alert = await Alert.findOneAndUpdate(
+    alertFilter,
+    {
+      ruleId: rule._id,
+      eventId: new Types.ObjectId(eventId),
+      title: 'ML anomaly detected',
+      description: `Isolation Forest identified unusual event behavior (score ${anomalyScore.toFixed(3)}).`,
+      severity: 'HIGH',
+      riskScore: Math.round(anomalyScore * 100),
+      status: 'NEW',
+      source: eventData?.source || event.source,
+      eventType: eventData?.eventType || event.eventType,
+      sourceIp: eventData?.sourceIp || event.sourceIp,
+      username: eventData?.username || event.username,
+      triggeredAt: eventData?.timestamp || event.timestamp || new Date(),
+      metadata: { detectionType: 'ML_ANOMALY', modelVersion, anomalyScore },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  if (!existingAlert) {
+    publishRealtimeEvent('ALERT_CREATED', {
+      alertId: alert._id.toString(),
+      eventId,
+      eventType: alert.eventType,
+      severity: alert.severity,
+      riskScore: alert.riskScore,
+    });
+  }
+  await correlateAlert(alert);
+  return alert;
+};
+
 export const evaluateSecurityEvent = async (event: Record<string, any>): Promise<any[]> => {
   try {
     const rules = await DetectionRule.find({ enabled: true }).lean();
     const generatedAlerts: any[] = [];
     const seenAlertKeys = new Set<string>();
+    const anomalyResult = await scoreEventForAnomaly(event);
+    const anomalyThreshold = Number(process.env.ML_ANOMALY_THRESHOLD ?? 0.65);
+
+    if (anomalyResult?.is_anomaly && anomalyResult.anomaly_score >= anomalyThreshold) {
+      generatedAlerts.push(await createAnomalyAlert(event, anomalyResult.anomaly_score, anomalyResult.model_version));
+    }
 
     for (const rule of rules) {
       const ruleId = String(rule._id);
@@ -120,8 +181,10 @@ export const evaluateSecurityEvent = async (event: Record<string, any>): Promise
       const description = rule.description || `Detection rule ${rule.name} matched the event.`;
       const eventData = await SecurityEvent.findById(event._id ?? event.id).lean();
 
+      const alertFilter = { ruleId: new Types.ObjectId(ruleId), eventId: new Types.ObjectId(eventId) };
+      const existingAlert = await Alert.exists(alertFilter);
       const alert = await Alert.findOneAndUpdate(
-        { ruleId: new Types.ObjectId(ruleId), eventId: new Types.ObjectId(eventId) },
+        alertFilter,
         {
           ruleId: new Types.ObjectId(ruleId),
           eventId: new Types.ObjectId(eventId),
@@ -148,6 +211,15 @@ export const evaluateSecurityEvent = async (event: Record<string, any>): Promise
         }
       );
 
+      if (!existingAlert) {
+        publishRealtimeEvent('ALERT_CREATED', {
+          alertId: alert._id.toString(),
+          eventId,
+          eventType: alert.eventType,
+          severity: alert.severity,
+          riskScore: alert.riskScore,
+        });
+      }
       generatedAlerts.push(alert);
       await correlateAlert(alert);
       seenAlertKeys.add(alertKey);

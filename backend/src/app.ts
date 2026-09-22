@@ -10,6 +10,7 @@ import eventsRoutes from './routes/events';
 import rulesRoutes from './routes/rules';
 import alertsRoutes from './routes/alerts';
 import incidentsRoutes from './routes/incidents';
+import realtimeRoutes from './routes/realtime';
 
 dotenv.config();
 
@@ -53,6 +54,7 @@ app.use('/api/events', eventsRoutes);
 app.use('/api/rules', rulesRoutes);
 app.use('/api/alerts', alertsRoutes);
 app.use('/api/incidents', incidentsRoutes);
+app.use('/api/realtime', realtimeRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/analyst', analystRoutes);
 

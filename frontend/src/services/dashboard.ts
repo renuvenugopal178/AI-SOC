@@ -17,6 +17,8 @@ export type SecurityEvent = {
 
 export type Alert = {
   id: string;
+  ruleId: string;
+  eventId: string;
   title: string;
   description: string;
   severity: SecuritySeverity;
@@ -25,6 +27,7 @@ export type Alert = {
   source?: string | null;
   eventType?: string | null;
   triggeredAt: string;
+  metadata?: Record<string, unknown>;
 };
 
 type CollectionResponse<T> = {

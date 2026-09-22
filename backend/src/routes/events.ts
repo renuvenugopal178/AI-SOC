@@ -4,6 +4,7 @@ import AuditLog from '../models/AuditLog';
 import { authenticate, AuthenticatedRequest, requireRole } from '../middleware/auth';
 import { sanitizeSecurityEvent, sanitizeViewerSecurityEvent, securityEventSchema } from '../validation/securityEvent';
 import { evaluateSecurityEvent } from '../services/detectionEngine';
+import { publishRealtimeEvent } from '../services/realtimeService';
 
 const router = Router();
 
@@ -74,6 +75,13 @@ const handleIngestEvent = async (req: AuthenticatedRequest, res: Response) => {
 
     const normalized = normalizeEventInput(parsed.data);
     const event = await SecurityEvent.create(normalized);
+    publishRealtimeEvent('SECURITY_EVENT_CREATED', {
+      eventId: event._id.toString(),
+      eventType: event.eventType,
+      severity: event.severity,
+      sourceIp: event.sourceIp,
+      timestamp: event.timestamp,
+    });
 
     let generatedAlerts: any[] = [];
 
